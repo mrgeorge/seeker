@@ -1,3 +1,9 @@
+from shapely.geometry import asMultiLineString, asPoint
+import random
+import time
+
+accuracyFactor = 1.e-5
+
 class Location(object):
     def __init__(self, t, lat, lon, accuracy, bearing):
         self.t = t
@@ -39,9 +45,49 @@ class Simulator(object):
         self.gfDict = {}
         self.pathDict = {}
         self.numUsers = numUsers
+        self.userDict = {}
+        self.tStart = time.localtime()
 
-    def createUsers(self):
-        pass
+    @property
+    def lastLocations(self):
+        return [user.locations[-1] for user in self.userDict.values()]
+
+    @property
+    def lastTrueLocations(self):
+        return [user._trueLocations[-1] for user in self.userDict.values()]
+
+    def createUserDict(self):
+        userIDs = range(self.numUsers)
+        locations, trueLocations = self.getInitialUserLocations(self.tStart)
+        for uid, loc, trueLoc in zip(userIDs, locations, trueLocations):
+            self.userDict[uid] = User(loc, trueLoc)
+
+    def getInitialUserLocations(self, tStart, accuracy=10):
+        """Place users uniformly within self.pathMLSPoly with Monte Carlo"""
+
+        try:
+            minLon, minLat, maxLon, maxLat = self.pathMLSPoly.bounds
+        except AttributeError:
+            self.setupPathGeom()
+
+        numAssigned = 0
+        locations = []
+        trueLocations = []
+        while numAssigned < self.numUsers:
+            lat = random.random() * (maxLat-minLat) + minLat
+            lon = random.random() * (maxLon-minLon) + minLon
+            pt = asPoint((lon, lat))
+            if self.pathMLSPoly.contains(pt):
+                bearing = random.random() * 360.
+                trueLocations.append(Location(tStart, lat, lon, accuracy,
+                                              bearing))
+
+                latOffset = random.random() * accuracy * accuracyFactor
+                lonOffset = random.random() * accuracy * accuracyFactor
+                locations.append(Location(tStart, lat+latOffset, lon+lonOffset,
+                                          accuracy, bearing))
+                numAssigned += 1
+        return (locations, trueLocations)
 
     def updateUsers(self):
         pass
@@ -77,6 +123,16 @@ class Simulator(object):
                     self.pathDict[key] = [location]
                 else:
                     self.pathDict[key].append(location)
+
+    def setupPathGeom(self, pathBuffer = 1.e-4):
+        try:
+            paths = self.pathDict.values()
+        except AttributeError:
+            self.createPathDict()
+        nPaths = len(paths)
+        self.pathMLS = asMultiLineString([[(loc.lon, loc.lat) for loc in path] \
+                                     for path in paths])
+        self.pathMLSPoly = self.pathMLS.buffer(pathBuffer)
 
     def run(self, tStart, tEnd):
         pass
