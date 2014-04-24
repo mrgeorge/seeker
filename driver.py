@@ -12,7 +12,8 @@ dtEnd = dtStart + timedelta(minutes=10)
 dtDelta = timedelta(seconds=1)
 
 # Initialize sim
-sim = seeker.Simulator(20, gfFilename, pathFilename, dtStart, dtEnd, dtDelta)
+sim = seeker.Simulator(numUsers, gfFilename, pathFilename,
+                       dtStart, dtEnd, dtDelta)
 
 # Run simulator
-sim.run()
+sim.run(showTrueLoc=True)

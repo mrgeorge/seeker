@@ -302,7 +302,7 @@ class Simulator(object):
     def assignUserStatuses(self, locUpdate):
         pass
 
-    def run(self, showPlot=True):
+    def run(self, showPlot=True, showTrueLoc=False):
         """Run Simulator by iterating through time steps
 
         Inputs:
@@ -331,8 +331,20 @@ class Simulator(object):
                     plot.plotGeofences(ax, self.gfList)
                     plot.plotPathLines(ax, self.pathDict.values())
                     plot.plotPathPoly(ax, self.pathMLSPoly)
-                    locs, = plot.plotUserLocations(ax, self.lastLocations)
+                    if showTrueLoc:
+                        locs, = plot.plotUserLocations(ax,
+                                                       self.lastTrueLocations)
+                    else:
+                        locs, = plot.plotUserLocations(ax, self.lastLocations)
                 else:
-                    locs.set_xdata([loc.lon for loc in self.lastLocations])
-                    locs.set_ydata([loc.lat for loc in self.lastLocations])
+                    if showTrueLoc:
+                        locs.set_xdata([loc.lon for loc in \
+                                        self.lastTrueLocations])
+                        locs.set_ydata([loc.lat for loc in \
+                                        self.lastTrueLocations])
+                    else:
+                        locs.set_xdata([loc.lon for loc in \
+                                        self.lastLocations])
+                        locs.set_ydata([loc.lat for loc in \
+                                        self.lastLocations])
                 fig.canvas.draw()
