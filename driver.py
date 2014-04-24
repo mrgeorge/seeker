@@ -1,14 +1,18 @@
 import seeker
+from datetime import datetime, timedelta
 
-sim = seeker.Simulator()
-sim.createGFDict(filename = "seeker/data/beatnik_geofences.dat")
-sim.createPathDict(filename = "seeker/data/beatnik_paths.dat")
-sim.setupPathGeom()
-sim.createUserDict()
+# Simulator parameters and data files
+numUsers=20
+gfFilename = "seeker/data/beatnik_geofences.dat"
+pathFilename = "seeker/data/beatnik_paths.dat"
 
-seeker.plot.plotBackgroundMap(filename = "seeker/data/beatnik_map.png")
-seeker.plot.plotGeofences(sim.gfDict.values())
-seeker.plot.plotPathLines(sim.pathDict.values())
-seeker.plot.plotPathPoly(sim.pathMLSPoly)
-seeker.plot.plotUserLocations(sim.lastLocations)
-seeker.plot.show()
+# Time range for simulator
+dtStart = datetime.now()
+dtEnd = dtStart + timedelta(minutes=10)
+dtDelta = timedelta(seconds=1)
+
+# Initialize sim
+sim = seeker.Simulator(20, gfFilename, pathFilename, dtStart, dtEnd, dtDelta)
+
+# Run simulator
+sim.run()
