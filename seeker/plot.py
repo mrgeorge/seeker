@@ -52,7 +52,7 @@ def setupRunPlot(sim, figsize=None):
     ax = fig.add_subplot(111)
     plotBackgroundMap(ax, filename="seeker/data/beatnik_map.png")
     plotGeofences(ax, sim.gfList)
-    plotPathLines(ax, sim.pathDict.values())
-    plotPathPoly(ax, sim.pathMLSPoly)
+    plotPathLines(ax, sim.pathList)
+    plotPathPoly(ax, sim.fullPathPoly)
 
     return (fig, ax)

@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from operator import itemgetter
 from datetime import datetime, timedelta
 
-from shapely.geometry import asMultiLineString, asLineString, asPoint
+from shapely.geometry import asLineString, asPoint
 
 import plot
 
@@ -19,16 +19,24 @@ class Location(object):
         self.accuracy = accuracy
         self.bearing = bearing
 
+    def __str__(self):
+        return "Location({}, {}, {}, {}, {})".format(self.t, self.lat, self.lon,
+                                                    self.accuracy, self.bearing)
+
     def distance(self, loc):
         """Return Euclidean distance to other Location loc"""
         return pow((self.lon - loc.lon)**2 + (self.lat - loc.lat)**2, 0.5)
+
+    @property
+    def asPoint(self):
+        return asPoint((self.lon, self.lat))
 
 class User(object):
     def __init__(self, location, trueLocation):
         self.locations = [location]
         self._trueLocations = [trueLocation]
         self.status = "start"
-        self.speed = 0.3
+        self.speed = 1.
         self.accuracy = 10.
 
     def _getLatestTrueLocation(self):
@@ -60,38 +68,39 @@ class Simulator(object):
         self.gfFilename = gfFilename
         self.pathFilename = pathFilename
         self.gfList = []
-        self.pathDict = {}
+        self.pathList = []
         self.userDict = {}
         self.dtStart = dtStart
         self.dtEnd = dtEnd
         self.dtDelta = dtDelta
 
         self.createGFList()
-        self.createPathDict()
+        self.createPathList()
         self.setupPathGeom()
+        self.setGFDistances()
         self.createUserDict()
 
     @property
-    def lastLocations(self):
+    def prevLocations(self):
         return [user.locations[-1] for user in self.userDict.values()]
 
     @property
-    def lastTrueLocations(self):
+    def prevTrueLocations(self):
         return [user._trueLocations[-1] for user in self.userDict.values()]
 
     def createUserDict(self):
         """Create dict with {uid: User} pairs and initialize User locations"""
 
         userIDs = range(self.numUsers)
-        locations, trueLocations = self.getInitialUserLocations(self.dtStart)
+        locations, trueLocations = self.createInitialUserLocations(self.dtStart)
         for uid, loc, trueLoc in zip(userIDs, locations, trueLocations):
             self.userDict[uid] = User(loc, trueLoc)
 
-    def getInitialUserLocations(self, tStart, accuracy=10):
-        """Place users uniformly within self.pathMLSPoly with Monte Carlo"""
+    def createInitialUserLocations(self, tStart, accuracy=10):
+        """Place users uniformly within self.fulPathPoly with Monte Carlo"""
 
         try:
-            minLon, minLat, maxLon, maxLat = self.pathMLSPoly.bounds
+            minLon, minLat, maxLon, maxLat = self.fullPathPoly.bounds
         except AttributeError:
             self.setupPathGeom()
 
@@ -102,7 +111,7 @@ class Simulator(object):
             lat = random.random() * (maxLat-minLat) + minLat
             lon = random.random() * (maxLon-minLon) + minLon
             pt = asPoint((lon, lat))
-            if self.pathMLSPoly.contains(pt):
+            if self.fullPathPoly.contains(pt):
                 bearing = random.random() * 360.
                 trueLocations.append(Location(tStart, lat, lon, accuracy,
                                               bearing))
@@ -115,7 +124,7 @@ class Simulator(object):
         return (locations, trueLocations)
 
     def createGFList(self):
-        """Create dict with {ID: Geofence} pairs read from self.gfFilename"""
+        """Create list of Geofences read from self.gfFilename"""
 
         with open(self.gfFilename, 'r') as f:
             for line in f.readlines():
@@ -129,8 +138,14 @@ class Simulator(object):
                 location = Location(None, latitude, longitude, None, None)
                 self.gfList.append(Geofence(ID, location, description))
 
-    def createPathDict(self):
-        """Create dict with {(a, b): [Location]} pairs from self.pathFilename"""
+    def createPathList(self):
+        """Create list of Location lists from self.pathFilename
+
+        List is ordered like gfList: pathList[n] connects gfList[n]-gfList[n+1]
+        """
+
+        pathList = [[] for ii in self.gfList[:-1]]
+        gfIDList = [gf.ID for gf in self.gfList]
 
         with open(self.pathFilename, 'r') as f:
             for line in f.readlines():
@@ -143,33 +158,60 @@ class Simulator(object):
                 IDEnd = int(IDEnd)
                 latitude = float(latitude)
                 longitude = float(longitude)
-                key = (IDStart, IDEnd)
                 location = Location(None, latitude, longitude, None, None)
-                if key not in self.pathDict:
-                    self.pathDict[key] = [location]
-                else:
-                    self.pathDict[key].append(location)
+                pathList[gfIDList.index(IDStart)].append(location)
+
+        self.pathList = pathList
 
     def setupPathGeom(self, pathBuffer = 1.e-4):
-        """Generate shapely MultiLineString and Polyon from list of paths
+        """Generate shapely LineString and Polyon from list of paths
 
         Inputs:
             pathBuffer - float, radius around path lines polygon area (degrees)
         """
 
         try:
-            paths = self.pathDict.values()
-        except AttributeError:
-            self.createPathDict()
-        nPaths = len(paths)
-        self.pathMLS = asMultiLineString([[(loc.lon, loc.lat) for loc in path] \
-                                     for path in paths])
-        self.pathMLSPoly = self.pathMLS.buffer(pathBuffer)
+            nPaths = len(self.pathList)
+        except:
+            self.createPathList()
+            nPaths = len(self.pathList)
+
+        self.fullPathLS = asLineString([(loc.lon, loc.lat) \
+                                        for path in self.pathList \
+                                        for loc in path])
+        self.fullPathPoly = self.fullPathLS.buffer(pathBuffer)
 
     def getNearestGeofence(self, userID, trueLoc=False):
         """Return index in self.gfList for nearest geofence"""
         distList = self.getDistancesToGeofences(userID, trueLoc=trueLoc)
         return min(enumerate(distList), key=itemgetter(1))[0]
+
+    def setGFDistances(self):
+        for gf in self.gfList:
+            gf.projDist = self.fullPathLS.project(gf.location.asPoint)
+
+    def getInitialGeofence(self, userID, trueLoc=False):
+        """Return index of gf with next smallest projected location"""
+        try:
+            gfDistances = [gf.projDist for gf in self.gfList]
+        except AttributeError:
+            self.setGFDistances()
+            gfDistances = [gf.projDist for gf in self.gfList]
+
+        if trueLoc:
+            loc = self.userDict[userID]._trueLocations[-1]
+        else:
+            loc = self.userDict[userID]._locations[-1]
+
+        projDist = self.fullPathLS.project(loc.asPoint)
+        prevGFDist = max(gfd for gfd in gfDistances if gfd <= projDist)
+        prevGFIndex = gfDistances.index(prevGFDist)
+
+        # Handle case where user starts beyond last geofence
+        if prevGFIndex == (len(gfDistances) - 1):
+            prevGFIndex -= 1
+
+        return prevGFIndex
 
     def getDistancesToGeofences(self, userID, trueLoc=False):
         if trueLoc:
@@ -181,91 +223,102 @@ class Simulator(object):
 
         return distList
 
-    def getCurrentPathID(self, userID, trueLoc=False):
+    def getCurrentPathIndex(self, userID, trueLoc=False):
         """Get ID of user's current path
 
         Input:
             userID
         Returns:
-            pathID - tuple (lastGF, nextGF) used to index self.pathDict
+            pathIndex - index of self.pathList user is on
         """
 
         try:
-            lastGFIndex = self.userDict[userID].lastGeofenceIndex
-            if lastGFIndex == (len(self.gfList) - 1): # user has finished
+            prevGFIndex = self.userDict[userID].prevGeofenceIndex
+            if prevGFIndex == (len(self.gfList) - 1): # user has finished
                 return None
-        except AttributeError: # lastGeofence hasn't been assigned, try nearest
-            lastGFIndex = self.getNearestGeofence(userID, trueLoc=trueLoc)
-            self.userDict[userID].lastGeofenceIndex = lastGFIndex
-            if lastGFIndex == (len(self.gfList) - 1): # on initialization,
-                                                      # assume user hasn't
-                                                      # finished
-                lastGFIndex -= 1
+        except AttributeError: # prevGeofence hasn't been assigned, try nearest
+            prevGFIndex = self.getInitialGeofence(userID, trueLoc=trueLoc)
+            self.userDict[userID].prevGeofenceIndex = prevGFIndex
 
+        pathIndex = prevGFIndex
 
-        nextGFIndex = lastGFIndex + 1
-        lastGFID = self.gfList[lastGFIndex].ID
-        nextGFID = self.gfList[nextGFIndex].ID
-        pathID = (lastGFID, nextGFID)
+        return pathIndex
 
-        return pathID
-
-    def getNextPathID(self, userID):
-        currPathID = self.getCurrentPathID(userID)
-        if (currPathID is None) or (currPathID[1] == self.gfList[-1].ID):
+    def getNextPathIndex(self, userID):
+        currPathIndex = self.getCurrentPathIndex(userID)
+        if (currPathIndex is None) or (currPathIndex == len(self.pathList)):
             return None
 
-        nextPathStartGFIndex = self.gfList.index(currPathID[1])
-        nextPathEndGFIndex = nextPathStartGFIndex + 1
-        nextPathID = (currPathID[1], self.gfList[nextPathEndGFIndex].ID)
+        return currPathIndex + 1
 
-        return nextPathID
-
-    def getDistancesToWaypoints(self, userID, pathID, trueLoc=False):
+    def getDistancesToWaypoints(self, userID, pathIndex, trueLoc=False):
         if trueLoc:
             distList = [self.userDict[userID]._trueLocations[-1].distance(wp) \
-                        for wp in self.pathDict[pathID]]
+                        for wp in self.pathList[pathIndex]]
         else:
             distList = [self.userDict[userID].locations[-1].distance(wp) \
-                        for wp in self.pathDict[pathID]]
+                        for wp in self.pathList[pathIndex]]
 
         return distList
 
-    def getNearestWaypoint(self, userID, pathID, trueLoc=False):
-        distList = self.getDistancesToWaypoints(userID, pathID, trueLoc=trueLoc)
+    def getNearestWaypoint(self, userID, pathIndex, trueLoc=False):
+        distList = self.getDistancesToWaypoints(userID, pathIndex,
+                                                trueLoc=trueLoc)
         return min(enumerate(distList), key=itemgetter(1))[0]
 
-    def getLastWaypoint(self, userID, pathID, trueLoc=False):
-        try:
-            return self.userDict[userID].lastWaypoint
-        except:
-            lastWP = self.getNearestWaypoint(userID, pathID, trueLoc=trueLoc)
-            path = self.pathDict[pathID]
-            if lastWP == (len(path) - 1): # on initialization, assume user
-                                          # hasn't finished
-                lastWP -= 1
-            self.lastWaypoint = lastWP
-            return lastWP
+    def getInitialWaypoint(self, userID, pathIndex, trueLoc=False):
 
-    def getNextWaypointLocation(self, userID, pathID, trueLoc=False):
-        lastWP = self.getLastWaypoint(userID, pathID, trueLoc=trueLoc)
-        path = self.pathDict[pathID]
-        if lastWP == (len(path) - 1): # start next path
-            nextPathID = self.getNextPathID(userID)
-            if nextPathID is None:
-                return None
-            nextWPLoc = self.pathDict[nextPathID][0]
+        path = self.pathList[pathIndex]
+        pathLS = asLineString([(loc.lon, loc.lat) for loc in path])
+        wpDistances = [pathLS.project(loc.asPoint) for loc in path]
+
+        if trueLoc:
+            loc = self.userDict[userID]._trueLocations[-1]
         else:
-            nextWPLoc = self.pathDict[pathID][lastWP+1]
+            loc = self.userDict[userID]._locations[-1]
+
+        projDist = pathLS.project(loc.asPoint)
+        prevWPDist = max(wpd for wpd in wpDistances if wpd <= projDist)
+        prevWPIndex = wpDistances.index(prevWPDist)
+
+        # Handle case where user starts beyond last waypoint
+        if prevWPIndex == (len(path) - 1):
+            prevWPIndex -= 1
+
+        return prevWPIndex
+
+    def getPrevWaypoint(self, userID, pathIndex, trueLoc=False):
+        try:
+            return self.userDict[userID].prevWaypoint
+        except:
+            prevWP = self.getInitialWaypoint(userID, pathIndex, trueLoc=trueLoc)
+            path = self.pathList[pathIndex]
+            if prevWP == (len(path) - 1): # on initialization, assume user
+                                          # hasn't finished
+                prevWP -= 1
+            self.userDict[userID].prevWaypoint = prevWP
+            return prevWP
+
+    def getNextWaypointLocation(self, userID, pathIndex, trueLoc=False):
+        prevWP = self.getPrevWaypoint(userID, pathIndex, trueLoc=trueLoc)
+        path = self.pathList[pathIndex]
+        if prevWP == (len(path) - 1): # start next path
+            nextPathIndex = self.getNextPathIndex(userID)
+            if nextPathIndex is None:
+                return None
+            nextWPLoc = self.pathList[nextPathIndex][0]
+        else:
+            nextWPLoc = self.pathList[pathIndex][prevWP+1]
 
         return nextWPLoc
 
     def getUserMovements(self, userID):
-        pathID = self.getCurrentPathID(userID, trueLoc=True)
-        if pathID is None: # user has finished
+        pathIndex = self.getCurrentPathIndex(userID, trueLoc=True)
+        if pathIndex is None: # user has finished
             return None
 
-        nextWPLoc = self.getNextWaypointLocation(userID, pathID, trueLoc=True)
+        nextWPLoc = self.getNextWaypointLocation(userID, pathIndex,
+                                                 trueLoc=True)
         if nextWPLoc is None: # user has finished
             return None
 
@@ -299,6 +352,29 @@ class Simulator(object):
                                        user.accuracy, bearing))
         return True
 
+    def updateUserWaypoints(self, userID, trueLoc=False):
+        user = self.userDict[userID]
+        path = self.pathList[user.prevGeofenceIndex]
+        if trueLoc:
+            loc = user._trueLocations[-1]
+        else:
+            loc = user._locations[-1]
+
+        if (loc.distance(path[user.prevWaypoint+1]) <
+            loc.accuracy * accuracyFactor):
+            user.prevWaypoint += 1
+            if user.prevWaypoint >= (len(path) - 1):
+                user.prevWaypoint = 0
+                user.prevGeofenceIndex += 1
+
+
+    def removeFinishedUsers(self, userID):
+        if self.userDict[userID].prevGeofenceIndex == (len(self.gfList) - 1):
+            self.userDict.pop(userID)
+            return True
+        else:
+            return False
+
     def assignUserStatuses(self, locUpdate):
         pass
 
@@ -316,7 +392,11 @@ class Simulator(object):
             dt = self.dtStart + ii*self.dtDelta
             for userID in self.userDict.keys():
                 self.getUserMovements(userID)
+
                 locUpdate = self.updateUserLocations(userID, dt)
+                self.updateUserWaypoints(userID, trueLoc=True)
+                if self.removeFinishedUsers(userID):
+                    continue
                 self.assignUserStatuses(locUpdate)
 
             if showPlot:
@@ -324,19 +404,19 @@ class Simulator(object):
                     fig, ax = plot.setupRunPlot(self)
                     if showTrueLoc:
                         locs, = plot.plotUserLocations(ax,
-                                                       self.lastTrueLocations)
+                                                       self.prevTrueLocations)
                     else:
-                        locs, = plot.plotUserLocations(ax, self.lastLocations)
+                        locs, = plot.plotUserLocations(ax, self.prevLocations)
                 else:
                     if showTrueLoc:
                         locs.set_xdata([loc.lon for loc in \
-                                        self.lastTrueLocations])
+                                        self.prevTrueLocations])
                         locs.set_ydata([loc.lat for loc in \
-                                        self.lastTrueLocations])
+                                        self.prevTrueLocations])
                     else:
                         locs.set_xdata([loc.lon for loc in \
-                                        self.lastLocations])
+                                        self.prevLocations])
                         locs.set_ydata([loc.lat for loc in \
-                                        self.lastLocations])
+                                        self.prevLocations])
                 ax.set_title(dt)
                 plot.show(fig)
