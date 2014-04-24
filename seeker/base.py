@@ -28,7 +28,7 @@ class User(object):
         self.locations = [location]
         self._trueLocations = [trueLocation]
         self.status = "start"
-        self.speed = 1.
+        self.speed = 0.3
         self.accuracy = 10.
 
     def _getLatestTrueLocation(self):
@@ -314,8 +314,6 @@ class Simulator(object):
                      self.dtDelta.total_seconds())
         for ii in xrange(nSteps):
             dt = self.dtStart + ii*self.dtDelta
-            print dt
-#            print [[loc.lat, loc.lon] for loc in self.lastLocations]
             for userID in self.userDict.keys():
                 self.getUserMovements(userID)
                 locUpdate = self.updateUserLocations(userID, dt)
@@ -323,14 +321,7 @@ class Simulator(object):
 
             if showPlot:
                 if ii==0:
-                    plt.ion()
-                    fig = plt.figure()
-                    ax = fig.add_subplot(111)
-                    plot.plotBackgroundMap(ax,
-                        filename="seeker/data/beatnik_map.png")
-                    plot.plotGeofences(ax, self.gfList)
-                    plot.plotPathLines(ax, self.pathDict.values())
-                    plot.plotPathPoly(ax, self.pathMLSPoly)
+                    fig, ax = plot.setupRunPlot(self)
                     if showTrueLoc:
                         locs, = plot.plotUserLocations(ax,
                                                        self.lastTrueLocations)
@@ -347,4 +338,5 @@ class Simulator(object):
                                         self.lastLocations])
                         locs.set_ydata([loc.lat for loc in \
                                         self.lastLocations])
-                fig.canvas.draw()
+                ax.set_title(dt)
+                plot.show(fig)

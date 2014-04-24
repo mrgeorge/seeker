@@ -2,8 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from descartes import PolygonPatch
 
-def show(fig, ax):
-    setLims(ax)
+def show(fig):
     plt.axis('off')
     fig.canvas.draw()
 
@@ -26,7 +25,8 @@ def plotGeofences(ax, geofences):
 
 def plotPathLines(ax, paths):
     for path in paths:
-        plotLocations(ax, path, color='red', ls='-')
+        plotLocations(ax, path, color='red', marker='s', mfc='yellow', ms=3,
+                      ls='-')
 
 def plotPathPoly(ax, pathPoly):
     patch = PolygonPatch(pathPoly, fc='blue', ec='blue', alpha=0.1, zorder=1)
@@ -42,3 +42,17 @@ def plotUserLocations(ax, locations, status=None):
 def plotLocations(ax, locations, **kwargs):
     xTup, yTup = zip(*[(loc.lon, loc.lat) for loc in locations])
     return ax.plot(xTup, yTup, **kwargs)
+
+def setupRunPlot(sim, figsize=None):
+    plt.ion()
+    if figsize is not None:
+        fig = plt.figure(figsize=figsize)
+    else:
+        fig = plt.figure()
+    ax = fig.add_subplot(111)
+    plotBackgroundMap(ax, filename="seeker/data/beatnik_map.png")
+    plotGeofences(ax, sim.gfList)
+    plotPathLines(ax, sim.pathDict.values())
+    plotPathPoly(ax, sim.pathMLSPoly)
+
+    return (fig, ax)

@@ -16,4 +16,4 @@ sim = seeker.Simulator(numUsers, gfFilename, pathFilename,
                        dtStart, dtEnd, dtDelta)
 
 # Run simulator
-sim.run(showTrueLoc=True)
+sim.run(showPlot=True, showTrueLoc=True)
