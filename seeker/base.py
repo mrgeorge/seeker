@@ -335,9 +335,8 @@ class Simulator(object):
 
         return (nextTrueLat, nextTrueLon, nextBearing)
 
-    def updateUserLocations(self, userID, dt):
+    def updateUserLocations(self, userID, nextCoords, dt):
 
-        nextCoords = self.getUserMovements(userID)
         if nextCoords is None:
             return False # error code for user to be removed
 
@@ -391,9 +390,8 @@ class Simulator(object):
         for ii in xrange(nSteps):
             dt = self.dtStart + ii*self.dtDelta
             for userID in self.userDict.keys():
-                self.getUserMovements(userID)
-
-                locUpdate = self.updateUserLocations(userID, dt)
+                nextCoords = self.getUserMovements(userID)
+                locUpdate = self.updateUserLocations(userID, nextCoords, dt)
                 self.updateUserWaypoints(userID, trueLoc=True)
                 if self.removeFinishedUsers(userID):
                     continue
