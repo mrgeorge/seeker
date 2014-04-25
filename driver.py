@@ -15,5 +15,16 @@ dtDelta = timedelta(seconds=1)
 sim = seeker.Simulator(numUsers, gfFilename, pathFilename,
                        dtStart, dtEnd, dtDelta)
 
+seeker.plot.setupRunPlot(sim, figsize=(12,10))
+
+raw_input("")
+
 # Run simulator
 sim.run(showPlot=True, showTrueLoc=True)
+
+raw_input("")
+# Re-initialize sim
+sim = seeker.Simulator(numUsers, gfFilename, pathFilename,
+                       dtStart, dtEnd, dtDelta)
+
+sim.run(showPlot=True, showTrueLoc=False)
